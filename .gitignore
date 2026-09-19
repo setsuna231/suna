@@ -1,0 +1,42 @@
+# build output
+build/
+*.o
+*.obj
+*.d
+*.exe
+*.out
+*.a
+*.dll
+*.so
+
+# debug symbols
+*.pdb
+*.ilk
+*.gch
+
+# editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.clangd/
+
+# OS cruft
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# suna runtime (should live in %APPDATA%, but just in case)
+snitch.log
+snitch.log.*
+journal
+config
+
+# local test dirs
+scratch/
+test-tmp/
+
+# debug logs
+*.log
+*.txt
