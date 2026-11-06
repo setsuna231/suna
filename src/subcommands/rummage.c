@@ -15,20 +15,23 @@ int rummage(int argc, char **argv, struct global_flags *g)
 
     if (target_count > 1)
     {
-        fprintf(stderr, "suna: one folder at a time, greedy!\n");
+        fprintf(stderr, "suna: one folder or pattern at a time, greedy!\n");
         return 2;
     }
 
     wchar_t wpath[MAX_PATH];
     normalize_path(target, wpath, MAX_PATH);
 
+    // Check if the target is an existing directory
     DWORD attrs = GetFileAttributesW(wpath);
-    if (attrs == INVALID_FILE_ATTRIBUTES)
+    bool is_dir = (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY));
+
+    if (attrs == INVALID_FILE_ATTRIBUTES && strchr(target, '*') == NULL && strchr(target, '?') == NULL)
     {
         fprintf(stderr, "suna: lol, i can't find '%s'. did you make it up?\n", target);
         return 1;
     }
-    if (!(attrs & FILE_ATTRIBUTE_DIRECTORY))
+    if (attrs != INVALID_FILE_ATTRIBUTES && !is_dir)
     {
         fprintf(stderr, "suna: '%s' is a file, dummy. i can't rummage through that.\n", target);
         return 1;
@@ -41,13 +44,23 @@ int rummage(int argc, char **argv, struct global_flags *g)
     }
 
     wchar_t search_path[MAX_PATH];
-    if (wcslen(wpath) > 0 && wpath[wcslen(wpath) - 1] == L'\\')
+
+    if (is_dir)
     {
-        swprintf(search_path, MAX_PATH, L"%ls*", wpath);
+        // If it's a folder, list everything inside it
+        if (wcslen(wpath) > 0 && wpath[wcslen(wpath) - 1] == L'\\')
+        {
+            swprintf(search_path, MAX_PATH, L"%ls*", wpath);
+        }
+        else
+        {
+            swprintf(search_path, MAX_PATH, L"%ls\\*", wpath);
+        }
     }
     else
     {
-        swprintf(search_path, MAX_PATH, L"%ls\\*", wpath);
+        // It's a wildcard pattern (e.g., *.c or src/*.h), use it directly
+        wcscpy(search_path, wpath);
     }
 
     WIN32_FIND_DATAW find_data;
@@ -55,7 +68,14 @@ int rummage(int argc, char **argv, struct global_flags *g)
 
     if (hFind == INVALID_HANDLE_VALUE)
     {
-        fprintf(stderr, "suna: *gets lost* i can't even read the contents of '%s'.\n", target);
+        if (is_dir)
+        {
+            printf("suna: it's empty in here... spooky.\n");
+        }
+        else
+        {
+            fprintf(stderr, "suna: i found nothing matching '%s'. did you make it up?\n", target);
+        }
         return 1;
     }
 
@@ -87,7 +107,7 @@ int rummage(int argc, char **argv, struct global_flags *g)
 
     if (!found_anything)
     {
-        printf("suna: it's empty in here... spooky.\n");
+        printf("suna: i found nothing matching '%s'.\n", target);
     }
 
     return 0;
