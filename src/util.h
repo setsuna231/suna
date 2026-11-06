@@ -17,4 +17,8 @@ bool is_dangerous_path(const wchar_t *abs_path);
 // Checks if the file is locked or denies delete access
 bool can_delete(const wchar_t *wpath);
 
+// Expands wildcards (*, ?) into a list of actual filenames
+char **expand_glob(const char *pattern, int *out_count);
+void free_glob_list(char **list, int count);
+
 #endif

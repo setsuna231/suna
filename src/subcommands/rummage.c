@@ -74,11 +74,11 @@ int rummage(int argc, char **argv, struct global_flags *g)
 
         if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         {
-            printf("[DIR]  %s\n", utf8_name);
+            printf("*dir*  %s\n", utf8_name);
         }
         else
         {
-            printf("[FILE] %s\n", utf8_name);
+            printf("*file* %s\n", utf8_name);
         }
 
     } while (FindNextFileW(hFind, &find_data) != 0);

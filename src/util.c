@@ -3,6 +3,7 @@
 #include <wchar.h>
 #include <wctype.h>
 #include <windows.h>
+#include <stdlib.h>
 #include "util.h"
 
 void to_wide(const char *input, wchar_t *output, int out_size)
@@ -120,4 +121,85 @@ bool can_delete(const wchar_t *wpath)
 
     CloseHandle(h);
     return true;
+}
+
+char **expand_glob(const char *pattern, int *out_count)
+{
+    *out_count = 0;
+
+    // No wildcards? Just return the pattern as a single-item list.
+    if (strchr(pattern, '*') == NULL && strchr(pattern, '?') == NULL)
+    {
+        char **list = malloc(sizeof(char *));
+        list[0] = _strdup(pattern);
+        *out_count = 1;
+        return list;
+    }
+
+    wchar_t wpattern[MAX_PATH];
+    to_wide(pattern, wpattern, MAX_PATH);
+
+    WIN32_FIND_DATAW find_data;
+    HANDLE hFind = FindFirstFileW(wpattern, &find_data);
+
+    if (hFind == INVALID_HANDLE_VALUE)
+    {
+        return NULL; // No matches found
+    }
+
+    int capacity = 10;
+    char **list = malloc(capacity * sizeof(char *));
+
+    do
+    {
+        if (wcscmp(find_data.cFileName, L".") == 0 || wcscmp(find_data.cFileName, L"..") == 0)
+        {
+            continue;
+        }
+
+        if (*out_count >= capacity)
+        {
+            capacity *= 2;
+            list = realloc(list, capacity * sizeof(char *));
+        }
+
+        char utf8_name[MAX_PATH];
+        to_utf8(find_data.cFileName, utf8_name, MAX_PATH);
+
+        // Preserve the directory prefix if one was provided (e.g., "src/*.c")
+        const char *last_slash = strrchr(pattern, '\\');
+        if (!last_slash)
+            last_slash = strrchr(pattern, '/');
+
+        if (last_slash)
+        {
+            int prefix_len = (int)(last_slash - pattern) + 1;
+            char full_path[MAX_PATH];
+            strncpy(full_path, pattern, prefix_len);
+            full_path[prefix_len] = '\0';
+            strcat(full_path, utf8_name);
+            list[*out_count] = _strdup(full_path);
+        }
+        else
+        {
+            list[*out_count] = _strdup(utf8_name);
+        }
+
+        (*out_count)++;
+
+    } while (FindNextFileW(hFind, &find_data) != 0);
+
+    FindClose(hFind);
+    return list;
+}
+
+void free_glob_list(char **list, int count)
+{
+    if (!list)
+        return;
+    for (int i = 0; i < count; i++)
+    {
+        free(list[i]);
+    }
+    free(list);
 }

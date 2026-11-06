@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <windows.h>
 #include <shellapi.h>
@@ -35,25 +36,49 @@ int nuke(int argc, char **argv, struct global_flags *g)
         }
     }
 
-    int target_count = w - 1;
-    if (target_count == 0)
+    if (w == 1)
     {
         fprintf(stderr, "suna: *pouts* are you gonna give me something to blow up or what?\n");
         return 2;
     }
 
-    // --- PRE-FLIGHT VALIDATION LOOP ---
+    int total_targets = 0;
+    char **targets = NULL;
+
+    for (int i = 1; i < w; i++)
+    {
+        int count = 0;
+        char **expanded = expand_glob(argv[i], &count);
+        if (count > 0)
+        {
+            targets = realloc(targets, (total_targets + count) * sizeof(char *));
+            for (int j = 0; j < count; j++)
+            {
+                targets[total_targets++] = expanded[j];
+            }
+            free(expanded);
+        }
+    }
+
+    if (total_targets == 0)
+    {
+        fprintf(stderr, "suna: lol you made that up. nothing matched.\n");
+        free(targets);
+        return 1;
+    }
+
     wchar_t wpath[MAX_PATH];
     bool has_dangerous = false;
 
-    for (int i = 1; i <= target_count; i++)
+    for (int i = 0; i < total_targets; i++)
     {
-        normalize_path(argv[i], wpath, MAX_PATH);
+        normalize_path(targets[i], wpath, MAX_PATH);
 
         DWORD attrs = GetFileAttributesW(wpath);
         if (attrs == INVALID_FILE_ATTRIBUTES)
         {
-            fprintf(stderr, "suna: lol you made that up. '%s' doesn't exist.\n", argv[i]);
+            fprintf(stderr, "suna: lol you made that up. '%s' doesn't exist.\n", targets[i]);
+            free_glob_list(targets, total_targets);
             return 1;
         }
 
@@ -66,19 +91,22 @@ int nuke(int argc, char **argv, struct global_flags *g)
 
         if (is_dangerous && !(opts.obliterate && opts.iafs))
         {
-            fprintf(stderr, "suna: wow, '%s'? bold. type --obliterate -i-am-fucking-sure if you're actually insane.\n", argv[i]);
+            fprintf(stderr, "suna: wow, '%s'? bold. type --obliterate -i-am-fucking-sure if you're actually insane.\n", targets[i]);
+            free_glob_list(targets, total_targets);
             return 2;
         }
 
         if (is_readonly && !opts.obliterate)
         {
-            fprintf(stderr, "suna: '%s' is read-only. use --obliterate if you really wanna break it.\n", argv[i]);
+            fprintf(stderr, "suna: '%s' is read-only. use --obliterate if you really wanna break it.\n", targets[i]);
+            free_glob_list(targets, total_targets);
             return 1;
         }
 
         if (!can_delete(wpath))
         {
-            fprintf(stderr, "suna: '%s' is locked, dummy. someone else is holding it.\n", argv[i]);
+            fprintf(stderr, "suna: '%s' is locked, dummy. someone else is holding it.\n", targets[i]);
+            free_glob_list(targets, total_targets);
             return 1;
         }
     }
@@ -86,49 +114,49 @@ int nuke(int argc, char **argv, struct global_flags *g)
     if (has_dangerous && !(opts.obliterate && opts.iafs))
     {
         fprintf(stderr, "suna: you snuck a dangerous path in here. i need --obliterate -i-am-fucking-sure for the whole batch.\n");
+        free_glob_list(targets, total_targets);
         return 2;
     }
 
-    // --- DRY RUN ---
     if (g->dry_run)
     {
         printf("suna: *cocks bazooka* dry run time~\n");
-        for (int i = 1; i <= target_count; i++)
+        for (int i = 0; i < total_targets; i++)
         {
-            normalize_path(argv[i], wpath, MAX_PATH);
+            normalize_path(targets[i], wpath, MAX_PATH);
             DWORD attrs = GetFileAttributesW(wpath);
 
             if (opts.obliterate)
             {
-                printf("  %s -> OBLITERATED", argv[i]);
+                printf("  %s -> *vaporized*", targets[i]);
             }
             else
             {
-                printf("  %s -> into the bin", argv[i]);
+                printf("  %s -> into the bin", targets[i]);
             }
 
             if ((attrs & FILE_ATTRIBUTE_SYSTEM) || is_dangerous_path(wpath))
             {
-                printf("  [DANGEROUS]*");
+                printf("  *dangerous*");
             }
             if (attrs & FILE_ATTRIBUTE_READONLY)
             {
-                printf("  [READ-ONLY]");
+                printf("  *read-only*");
             }
             printf("\n");
         }
         if (has_dangerous)
             printf("\n* = system/protected. requires -i-am-fucking-sure\n");
+        free_glob_list(targets, total_targets);
         return 0;
     }
 
-    // --- EXECUTION ---
-    wchar_t *from_buf = calloc(MAX_PATH * target_count + 2, sizeof(wchar_t));
+    wchar_t *from_buf = calloc(MAX_PATH * total_targets + 2, sizeof(wchar_t));
     wchar_t *ptr = from_buf;
 
-    for (int i = 1; i <= target_count; i++)
+    for (int i = 0; i < total_targets; i++)
     {
-        normalize_path(argv[i], wpath, MAX_PATH);
+        normalize_path(targets[i], wpath, MAX_PATH);
         DWORD attrs = GetFileAttributesW(wpath);
 
         if ((attrs & FILE_ATTRIBUTE_READONLY) && opts.obliterate)
@@ -153,6 +181,7 @@ int nuke(int argc, char **argv, struct global_flags *g)
 
     int result = SHFileOperationW(&op);
     free(from_buf);
+    free_glob_list(targets, total_targets);
 
     if (result != 0 || op.fAnyOperationsAborted)
     {
@@ -160,13 +189,13 @@ int nuke(int argc, char **argv, struct global_flags *g)
         return 1;
     }
 
-    if (target_count == 1)
+    if (total_targets == 1)
     {
-        printf("suna: hehe, '%s' went boom.\n", argv[1]);
+        printf("suna: *boom* hehe, it went boom.\n");
     }
     else
     {
-        printf("suna: hehehe, wiped %d things off the map.\n", target_count);
+        printf("suna: *boom* hehehe, wiped %d things off the map.\n", total_targets);
     }
 
     return 0;
